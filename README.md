@@ -4,8 +4,13 @@ Este projeto fornece uma biblioteca Python para comunicação com a API da IQ Op
 
 ## Instalação
 
-1. Certifique-se de ter o Python instalado (recomendado 3.10+).
-2. Instale as dependências:
+1. Instalação da biblioteca:
+```bash
+pip install myiq
+```
+
+2. Certifique-se de ter o Python instalado (recomendado 3.10+).
+3. Instale as dependências:
 
 ```bash
 pip install -r requirements.txt

@@ -12,7 +12,7 @@ ou via Pypi
 pip install myiq
 ```
 2. Certifique-se de ter o Python instalado (recomendado 3.10+).
-2. Instale as dependências:
+3. Instale as dependências:
 
 ```bash
 pip install -r requirements.txt

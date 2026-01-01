@@ -40,6 +40,17 @@ class IQOption:
         # Iniciar Heartbeat
         asyncio.create_task(self._heartbeat_loop())
 
+    def check_connect(self) -> bool:
+        """
+        Verifica se a conexão WebSocket está ativa e autenticada.
+        
+        Returns:
+            bool: True se conectado e autenticado, False caso contrário.
+        """
+        if self.ws and self.ws.is_connected and self.ssid:
+            return True
+        return False
+
     async def _on_reconnect(self):
         """Called automatically by ReconnectingWS when connection is restored."""
         logger.info("performing_reconnection_tasks")

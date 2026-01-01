@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: myiq
-Version: 0.1.2
+Version: 0.1.3
 Summary: A modern, asynchronous Python library for IQ Option API
 Author-email: IzioGanasi <izio.ganasi@gmail.com>
 Project-URL: Homepage, https://github.com/IzioGanasi/biblioteca_myiq
@@ -19,159 +19,174 @@ Requires-Dist: pydantic>=2.0.0
 Requires-Dist: structlog>=23.1.0
 Dynamic: license-file
 
-# IQ Option ML Trader Library
+# Biblioteca myiq
 
-Este projeto fornece uma biblioteca Python para comunicação com a API da IQ Option, permitindo a obtenção de candles, balances e execução de trades Blitz.
+Uma biblioteca Python moderna, assíncrona e robusta para interação com a plataforma de negociação IQ Option. Projetada para estabilidade, performance e facilidade de uso em projetos de Trading Algorítmico e Machine Learning.
+
+**Status:** v0.1.2 Stable
+
+## Funcionalidades Principais
+
+- **Conexão Assíncrona:** Baseada em `asyncio` e `websockets`, permitindo alta concorrência.
+- **Reconexão Automática:** Sistema nativo de `ReconnectingWS` que mantém a sessão ativa e recupera quedas de rede transparentemente.
+- **Gestão de Ativos:** Ferramentas completas para descobrir ativos abertos/fechados, lucro (payout) e horários.
+- **Dados Históricos e Tempo Real:** Coleta massiva de candles históricos e streaming de velas em tempo real com baixa latência.
+- **Trading:** Execução de ordens Blitz e Digitais.
 
 ## Instalação
-1. Instale via git
-```bash
-pip install git+https://github.com/IzioGanasi/biblioteca_myiq.git
-```
-ou via Pypi
+
+Direto do PyPI:
 ```bash
 pip install myiq
 ```
-2. Certifique-se de ter o Python instalado (recomendado 3.10+).
-3. Instale as dependências:
 
+Ou a versão mais recente do GitHub:
 ```bash
-pip install -r requirements.txt
+pip install git+https://github.com/IzioGanasi/biblioteca_myiq.git
 ```
 
-## Uso Básico
+Dependências básicas: `aiohttp`, `websockets`, `pydantic`, `structlog`.
+
+---
+
+## Guia Completo de Funcionalidades
+
+Abaixo listamos como utilizar **cada uma** das funcionalidades disponíveis na biblioteca.
+
+### 1. Inicialização e Conexão
+
+A classe `IQOption` gerencia tudo. O método `start()` realiza o login HTTP e estabelece o WebSocket.
 
 ```python
 import asyncio
 from myiq import IQOption
 
 async def main():
-    # Configure suas credenciais em variáveis de ambiente ou arquivo seguro
-    email = "seu_email" 
-    senha = "sua_senha"
+    iq = IQOption("email@exemplo.com", "senha123")
     
-    iq = IQOption(email, senha)
+    # Inicia conexão e loop de autenticação
     await iq.start()
+    print("Conectado com sucesso!")
     
-    balances = await iq.get_balances()
-    print(balances)
-    
-    candles = await iq.fetch_candles(active_id=76, duration=60, total=1500)
-    print(f"[candles] Received {len(candles)} candles")
+    # ... operações ...
     
     await iq.close()
 
 asyncio.run(main())
 ```
 
-## Exemplos de Cada Módulo
+### 2. Gerenciamento de Conta (Balances)
 
-### 1. Autenticação HTTP (`IQAuth`)
+Liste seus saldos (Real, Practice/Demo, Torneio) e troque entre eles.
+
 ```python
-from myiq import IQAuth
-import asyncio
+# Listar todos os saldos disponíveis
+balances = await iq.get_balances()
+print("Saldos disponíveis:", balances)
 
-async def demo_auth():
-    auth = IQAuth("email", "senha")
-    ssid = await auth.get_ssid()
-    print("SSID:", ssid)
-
-asyncio.run(demo_auth())
+# Trocar para conta de Prática (procure o ID type=4 geralmente)
+# Exemplo: Encontrar e mudar para saldo de treino
+for b in balances:
+    if b.type == 4:  # 1=Real, 4=Practice
+        print(f"Mudando para saldo de treino: {b.amount}")
+        await iq.change_balance(b.id)
+        break
 ```
 
-### 2. Cliente Core (`IQOption`)
+### 3. Mapeador de Ativos (Actives Explorer)
+
+Descubra quais ativos estão operáveis **agora**, seus payouts e status de suspensão. Esta é a funcionalidade mais avançada para filtrar o mercado.
+
 ```python
-from myiq import IQOption
-import asyncio
+from myiq import get_all_actives_status
 
-async def demo_client():
-    iq = IQOption("email", "senha")
-    await iq.start()
-    
-    # Listar ativos abertos no momento para Blitz
-    actives = await iq.get_actives("turbo")
-    for id, info in actives.items():
-        if info['open']:
-            print(f"Ativo {info['name']} (ID: {id}) disponível")
-            
-    await iq.close()
+# Retorna um dicionário completo com status de cada ativo 'turbo'
+# Chave = Active ID
+actives = await get_all_actives_status(iq, instrument_type="turbo")
 
-asyncio.run(demo_client())
+print("Ativos Abertos e com Lucro > 80%:")
+for active_id, info in actives.items():
+    if info['is_open'] and info['profit_percent'] >= 80:
+        print(f"ID: {active_id} | Nome: {info['ticker']} | Payout: {info['profit_percent']}%")
+
+# info contém: 'enabled', 'suspended', 'market_open', 'schedule', 'image', etc.
 ```
 
-### 3. Utilitários
+Métodos auxiliares rápidos no cliente:
 ```python
-from myiq import get_req_id, get_sub_id, get_client_id
-
-print("req_id:", get_req_id())
-print("sub_id:", get_sub_id())
-print("client_id:", get_client_id())
+# Checagem rápida de um ativo específico
+status = await iq.check_active(76) # 76 = EURUSD
+print(f"EURUSD Aberto? {iq.is_active_open(76)}")
+print(f"Payout atual: {iq.get_profit_percent(76)}%")
 ```
 
-### 4. Dispatcher e Eventos
+### 4. Coleta de Candles (Histórico)
+
+Baixe milhares de velas automaticamente. A função lida com a paginação interna da IQ Option.
+
 ```python
-from myiq import IQOption
-import asyncio
+# Baixa 1000 velas de 1 minuto (60s) do ativo 76 (EURUSD)
+candles = await iq.fetch_candles(active_id=76, duration=60, total=1000)
 
-async def demo_dispatcher():
-    iq = IQOption("email", "senha")
-    await iq.start()
-    
-    def on_candle(msg):
-        print("Nova vela gerada:", msg)
-        
-    iq.dispatcher.add_listener("candle-generated", on_candle)
-    await iq.start_candles_stream(active_id=76, duration=60, callback=lambda d: None)
-    
-    await asyncio.sleep(10)
-    await iq.close()
-
-asyncio.run(demo_dispatcher())
+print(f"Baixadas {len(candles)} velas.")
+print(f"Primeira: {candles[0]}")
+print(f"Última: {candles[-1]}")
 ```
 
-### 5. Modelos Pydantic
+### 5. Candles em Tempo Real (Streaming)
+
+Receba velas assim que elas fecham ou atualizam, ideal para bots que operam tick-a-tick.
+
 ```python
-from myiq import Balance, Candle
+def on_new_candle(candle_data):
+    print(f"Nova atualização de vela: {candle_data}")
 
-raw_balance = {"id": 123, "type": 4, "amount": 100.0, "currency": "USD"}
-balance = Balance(**raw_balance)
-print(balance)
+# Assina o ativo 76 para velas de 1 minuto
+# O callback é chamado a cada atualização
+await iq.start_candles_stream(active_id=76, duration=60, callback=on_new_candle)
+
+# Mantenha o loop rodando para continuar recebendo
+await asyncio.sleep(60)
 ```
 
-## Raw WebSocket Return Dictionaries
+### 6. Execução de Ordens (Trading)
 
-### Balance
-```json
-{
-  "id": 123,
-  "type": 4,
-  "amount": 100.0,
-  "currency": "USD"
-}
+Envie ordens de compra (Call/Put). Atualmente suporta opções Blitz/Turbo.
+
+```python
+# Compra de $10, direção CALL, expiração 30s (padrão blitz) no ativo 76
+await iq.buy_blitz(active_id=76, direction="call", amount=10, duration=30)
+
+# Para saber o resultado, você deve ouvir os eventos de 'order-created' ou consultar histórico.
+# O método buy_blitz envia a ordem, o processamento é assíncrono.
 ```
 
-### Candle
-```json
-{
-  "id": 1,
-  "from": 1700000000,
-  "to": 1700000060,
-  "open": 1.1234,
-  "close": 1.1240,
-  "min": 1.1220,
-  "max": 1.1250,
-  "volume": 2500.0
-}
+### 7. Sistema de Eventos (Dispatcher)
+
+Para usuários avançados que querem ouvir eventos crus do WebSocket (ex: resultados de portfolio, mudanças de saldo).
+
+```python
+def debug_listener(msg):
+    if msg.get("name") == "position-changed":
+        print("Posição alterada!", msg)
+
+iq.dispatcher.add_listener("position-changed", debug_listener)
 ```
 
-## Estrutura do Projeto
+## Estrutura de Diretórios
 
-- `myiq/`: Core da biblioteca.
-  - `core/`: Clientes, conexão, reconexão e descoberta de ativos.
-  - `http/`: Autenticação.
-  - `models/`: Modelos de dados.
-- `requirements.txt`: Dependências.
-- `pyproject.toml`: Configuração de build (PyPI).
+```
+myiq/
+├── core/           # Lógica principal (Client, WebSocket, Reconnect)
+├── http/           # Autenticação HTTP (SSID)
+├── models/         # Definições de dados (Candle, Balance)
+└── utils/          # Funções auxiliares
+```
+
+## Contribuindo
+
+Pull Requests são bem-vindos. Para mudanças maiores, abra uma issue primeiro para discutir o que você gostaria de mudar.
 
 ## Licença
-MIT
+
+[MIT](https://choosealicense.com/licenses/mit/)

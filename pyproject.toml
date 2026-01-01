@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "myiq"
+version = "0.1.0"
+authors = [
+  { name="IzioGanasi", email="izio.ganasi@gmail.com" },
+]
+description = "A modern, asynchronous Python library for IQ Option API"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "websockets>=11.0",
+    "httpx>=0.24.0",
+    "pydantic>=2.0.0",
+    "structlog>=23.1.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/IzioGanasi/biblioteca_myiq"
+"Bug Tracker" = "https://github.com/IzioGanasi/biblioteca_myiq/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["myiq*"]

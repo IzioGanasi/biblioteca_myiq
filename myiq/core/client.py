@@ -415,22 +415,40 @@ class IQOption:
             def on_result(msg):
                 if msg.get("name") == EV_POSITION_CHANGED:
                     raw = msg.get("msg", {})
-                    # Verifica ID
-                    if str(raw.get("external_id")) == str(order_id) or str(raw.get("id")) == str(order_id):
+                    # A estrutura pode vir de diferentes formas, precisamos checar todas
+                    # IDs podem ser string ou int
+                    msg_id = raw.get("id")
+                    external_id = raw.get("external_id")
+                    
+                    is_same_id = (str(msg_id) == str(order_id) or str(external_id) == str(order_id))
+                    
+                    if is_same_id:
                         status = raw.get("status")
                         evt = raw.get("raw_event", {}).get("binary_options_option_changed1", {})
                         
-                        if status == "closed" or evt.get("result") in ["win", "loose", "equal"]:
+                        # O evento de fechamento geralmente tem status 'closed' OU o evento interno tem 'result'
+                        # Logs mostram result='win' no evento interno e status='closed' no externo
+                        
+                        is_closed = (status == "closed")
+                        has_result = (evt.get("result") in ["win", "loose", "equal"])
+                        
+                        if is_closed or has_result:
                             if not result_future.done():
                                 # Parse do resultado
-                                pnl = raw.get("pnl", 0) # PNL liquido usado no log
-                                profit = raw.get("close_profit", 0) - raw.get("invest", 0)
+                                # O PNL correto vem geralmente no nível raiz do msg ou calculado
+                                # Log: "pnl":0.8600000000000001
+                                pnl = raw.get("pnl", 0)
+                                if pnl == 0 and "profit_amount" in evt:
+                                     # Fallback calcular PNL
+                                     net = evt.get("profit_amount", 0) - evt.get("amount", 0)
+                                     pnl = net
+                                
                                 outcome = evt.get("result") or raw.get("close_reason")
                                 
                                 result_data = {
                                     "status": "closed",
                                     "result": outcome,
-                                    "profit": pnl, # Usando PnL do log
+                                    "profit": pnl, 
                                     "pnl": pnl,
                                     "order_id": order_id
                                 }

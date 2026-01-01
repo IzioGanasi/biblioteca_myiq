@@ -19,6 +19,7 @@ class ReconnectingWS:
         self.backoff = backoff
         self.ws: WSConnection | None = None
         self._on_message_hook = None
+        self.on_reconnect = None # Callback for reconnection events
         self._connected = asyncio.Event()
 
     @property
@@ -30,6 +31,10 @@ class ReconnectingWS:
         self._on_message_hook = fn
         if self.ws:
             self.ws.on_message_hook = fn
+
+    @property
+    def is_connected(self) -> bool:
+        return self._connected.is_set() and self.ws and self.ws.is_connected
 
     async def connect(self):
         await self._attempt_connect()
@@ -56,9 +61,32 @@ class ReconnectingWS:
 
     async def _monitor(self):
         """Continuously monitor the underlying connection and reconnect if it drops."""
-        while True:
+        while self._connected.is_set() or self.ws:
             await asyncio.sleep(1)
+            # If explicitely closed, stop monitoring
+            if not self._connected.is_set() and self.ws is None:
+                break
+                
             if self.ws is None or not getattr(self.ws, "is_connected", False):
+                if not self._connected.is_set() and self.ws: # Was connected, now lost
+                     # Double check if user didn't request close
+                     pass
+
                 logger.warning("ws_lost", reason="disconnected")
                 self._connected.clear()
-                await self._attempt_connect()
+                try:
+                    await self._attempt_connect()
+                    # Trigger Reconnect Callback if set
+                    if hasattr(self, "on_reconnect") and self.on_reconnect:
+                        if asyncio.iscoroutinefunction(self.on_reconnect):
+                            await self.on_reconnect()
+                        else:
+                            self.on_reconnect()
+                except:
+                    break
+
+    async def close(self):
+        self._connected.clear()
+        if self.ws:
+            await self.ws.close()
+            self.ws = None

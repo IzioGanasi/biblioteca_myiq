@@ -1,0 +1,167 @@
+Metadata-Version: 2.4
+Name: myiq
+Version: 0.1.0
+Summary: A modern, asynchronous Python library for IQ Option API
+Author-email: IzioGanasi <izio.ganasi@gmail.com>
+Project-URL: Homepage, https://github.com/IzioGanasi/biblioteca_myiq
+Project-URL: Bug Tracker, https://github.com/IzioGanasi/biblioteca_myiq/issues
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Intended Audience :: Developers
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: websockets>=11.0
+Requires-Dist: httpx>=0.24.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: structlog>=23.1.0
+Dynamic: license-file
+
+# IQ Option ML Trader Library
+
+Este projeto fornece uma biblioteca Python para comunicação com a API da IQ Option, permitindo a obtenção de candles, balances e execução de trades Blitz.
+
+## Instalação
+
+1. Certifique-se de ter o Python instalado (recomendado 3.10+).
+2. Instale as dependências:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Uso Básico
+
+```python
+import asyncio
+from myiq import IQOption
+
+async def main():
+    iq = IQOption("seu_email", "sua_senha")
+    await iq.start()
+    balances = await iq.get_balances()
+    print(balances)
+    candles = await iq.fetch_candles(active_id=76, duration=60, total=1500)
+    print(f"[candles] Received {len(candles)} candles")
+
+asyncio.run(main())
+```
+
+## Exemplos de Cada Módulo
+
+### 1. Autenticação HTTP (`myiq.http.auth.IQAuth`)
+```python
+from myiq import IQAuth
+import asyncio
+
+async def demo_auth():
+    auth = IQAuth("email", "senha")
+    ssid = await auth.get_ssid()
+    print("SSID:", ssid)
+
+asyncio.run(demo_auth())
+```
+
+### 2. Cliente Core (`myiq.core.client.IQOption`)
+```python
+from myiq import IQOption
+import asyncio
+
+async def demo_client():
+    iq = IQOption("email", "senha")
+    await iq.start()
+    balances = await iq.get_balances()
+    print("Balances:", balances)
+    await iq.ws.ws.close()
+
+asyncio.run(demo_client())
+```
+
+### 3. Utilitários (`myiq.core.utils`)
+```python
+from myiq import get_req_id, get_sub_id, get_client_id
+
+print("req_id:", get_req_id())
+print("sub_id:", get_sub_id())
+print("client_id:", get_client_id())
+```
+
+### 4. Dispatcher (`myiq.core.dispatcher.Dispatcher`)
+```python
+from myiq import IQOption
+import asyncio
+
+async def demo_dispatcher():
+    iq = IQOption("email", "senha")
+    await iq.start()
+    def on_candle(msg):
+        print("Candle event:", msg)
+    iq.dispatcher.add_listener("candle-generated", on_candle)
+    await iq.start_candles_stream(active_id=76, duration=60, callback=lambda d: None)
+    await asyncio.sleep(5)
+    await iq.ws.ws.close()
+
+asyncio.run(demo_dispatcher())
+```
+
+### 5. Modelos Pydantic (`myiq.models.base`)
+```python
+from myiq import Balance, Candle
+
+raw_balance = {"id": 123, "type": 4, "amount": 100.0, "currency": "USD"}
+balance = Balance(**raw_balance)
+print(balance)
+
+raw_candle = {
+    "id": 1,
+    "from": 1700000000,
+    "to": 1700000060,
+    "open": 1.1234,
+    "close": 1.1240,
+    "min": 1.1220,
+    "max": 1.1250,
+    "volume": 2500.0,
+}
+candle = Candle(**raw_candle)
+print(candle)
+```
+
+## Dicionários crus dos retornos do WebSocket
+### Balance (evento `portfolio.order-changed` ou `portfolio.position-changed`)
+```json
+{
+  "id": 123,
+  "type": 4,
+  "amount": 100.0,
+  "currency": "USD"
+}
+```
+### Candle (evento `candle-generated`)
+```json
+{
+  "id": 1,
+  "from": 1700000000,
+  "to": 1700000060,
+  "open": 1.1234,
+  "close": 1.1240,
+  "min": 1.1220,
+  "max": 1.1250,
+  "volume": 2500.0
+}
+```
+
+## Estrutura do Projeto
+
+- `myiq/`: Biblioteca personalizada para comunicação com a API da IQ Option.
+  - `core/`: Componentes principais (cliente, conexão, dispatcher).
+  - `http/`: Autenticação HTTP.
+  - `models/`: Modelos de dados Pydantic.
+- `requirements.txt`: Lista de dependências.
+
+## Notas
+
+- O bot opera no ativo **EUR/USD Blitz** (ID 76) por padrão.
+- O timeframe padrão é de **1 minuto**.
+- O valor da entrada padrão é **1.0**.

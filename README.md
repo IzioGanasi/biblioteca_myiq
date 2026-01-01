@@ -3,8 +3,15 @@
 Este projeto fornece uma biblioteca Python para comunicação com a API da IQ Option, permitindo a obtenção de candles, balances e execução de trades Blitz.
 
 ## Instalação
-
-1. Certifique-se de ter o Python instalado (recomendado 3.10+).
+1. Instale via git
+```bash
+pip install git+https://github.com/IzioGanasi/biblioteca_myiq.git
+```
+ou via Pypi
+```bash
+pip install myiq
+```
+2. Certifique-se de ter o Python instalado (recomendado 3.10+).
 2. Instale as dependências:
 
 ```bash
@@ -18,19 +25,27 @@ import asyncio
 from myiq import IQOption
 
 async def main():
-    iq = IQOption("seu_email", "sua_senha")
+    # Configure suas credenciais em variáveis de ambiente ou arquivo seguro
+    email = "seu_email" 
+    senha = "sua_senha"
+    
+    iq = IQOption(email, senha)
     await iq.start()
+    
     balances = await iq.get_balances()
     print(balances)
+    
     candles = await iq.fetch_candles(active_id=76, duration=60, total=1500)
     print(f"[candles] Received {len(candles)} candles")
+    
+    await iq.close()
 
 asyncio.run(main())
 ```
 
 ## Exemplos de Cada Módulo
 
-### 1. Autenticação HTTP (`myiq.http.auth.IQAuth`)
+### 1. Autenticação HTTP (`IQAuth`)
 ```python
 from myiq import IQAuth
 import asyncio
@@ -43,7 +58,7 @@ async def demo_auth():
 asyncio.run(demo_auth())
 ```
 
-### 2. Cliente Core (`myiq.core.client.IQOption`)
+### 2. Cliente Core (`IQOption`)
 ```python
 from myiq import IQOption
 import asyncio
@@ -51,14 +66,19 @@ import asyncio
 async def demo_client():
     iq = IQOption("email", "senha")
     await iq.start()
-    balances = await iq.get_balances()
-    print("Balances:", balances)
-    await iq.ws.ws.close()
+    
+    # Listar ativos abertos no momento para Blitz
+    actives = await iq.get_actives("turbo")
+    for id, info in actives.items():
+        if info['open']:
+            print(f"Ativo {info['name']} (ID: {id}) disponível")
+            
+    await iq.close()
 
 asyncio.run(demo_client())
 ```
 
-### 3. Utilitários (`myiq.core.utils`)
+### 3. Utilitários
 ```python
 from myiq import get_req_id, get_sub_id, get_client_id
 
@@ -67,7 +87,7 @@ print("sub_id:", get_sub_id())
 print("client_id:", get_client_id())
 ```
 
-### 4. Dispatcher (`myiq.core.dispatcher.Dispatcher`)
+### 4. Dispatcher e Eventos
 ```python
 from myiq import IQOption
 import asyncio
@@ -75,40 +95,31 @@ import asyncio
 async def demo_dispatcher():
     iq = IQOption("email", "senha")
     await iq.start()
+    
     def on_candle(msg):
-        print("Candle event:", msg)
+        print("Nova vela gerada:", msg)
+        
     iq.dispatcher.add_listener("candle-generated", on_candle)
     await iq.start_candles_stream(active_id=76, duration=60, callback=lambda d: None)
-    await asyncio.sleep(5)
-    await iq.ws.ws.close()
+    
+    await asyncio.sleep(10)
+    await iq.close()
 
 asyncio.run(demo_dispatcher())
 ```
 
-### 5. Modelos Pydantic (`myiq.models.base`)
+### 5. Modelos Pydantic
 ```python
 from myiq import Balance, Candle
 
 raw_balance = {"id": 123, "type": 4, "amount": 100.0, "currency": "USD"}
 balance = Balance(**raw_balance)
 print(balance)
-
-raw_candle = {
-    "id": 1,
-    "from": 1700000000,
-    "to": 1700000060,
-    "open": 1.1234,
-    "close": 1.1240,
-    "min": 1.1220,
-    "max": 1.1250,
-    "volume": 2500.0,
-}
-candle = Candle(**raw_candle)
-print(candle)
 ```
 
-## Dicionários crus dos retornos do WebSocket
-### Balance (evento `portfolio.order-changed` ou `portfolio.position-changed`)
+## Raw WebSocket Return Dictionaries
+
+### Balance
 ```json
 {
   "id": 123,
@@ -117,7 +128,8 @@ print(candle)
   "currency": "USD"
 }
 ```
-### Candle (evento `candle-generated`)
+
+### Candle
 ```json
 {
   "id": 1,
@@ -133,14 +145,12 @@ print(candle)
 
 ## Estrutura do Projeto
 
-- `myiq/`: Biblioteca personalizada para comunicação com a API da IQ Option.
-  - `core/`: Componentes principais (cliente, conexão, dispatcher).
-  - `http/`: Autenticação HTTP.
-  - `models/`: Modelos de dados Pydantic.
-- `requirements.txt`: Lista de dependências.
+- `myiq/`: Core da biblioteca.
+  - `core/`: Clientes, conexão, reconexão e descoberta de ativos.
+  - `http/`: Autenticação.
+  - `models/`: Modelos de dados.
+- `requirements.txt`: Dependências.
+- `pyproject.toml`: Configuração de build (PyPI).
 
-## Notas
-
-- O bot opera no ativo **EUR/USD Blitz** (ID 76) por padrão.
-- O timeframe padrão é de **1 minuto**.
-- O valor da entrada padrão é **1.0**.
+## Licença
+MIT

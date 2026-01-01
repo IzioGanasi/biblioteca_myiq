@@ -41,16 +41,21 @@ async def demo_iqoption(email: str, password: str):
     print("[subscribe_portfolio] Subscribed to portfolio events")
 
     # ----- fetch_candles (historical, >1000 possible) -----
-    candles = await iq.fetch_candles(active_id=76, duration=60, total=1500)
+    candles = await iq.fetch_candles(active_id=2323, duration=60, total=1500)
     print(f"[candles] Received {len(candles)} candles")
 
     # ----- buy_blitz (trade execution) -----
     # Uncomment the line below to place a real trade (requires a selected balance)
-    # result = await iq.buy_blitz(active_id=76, direction="call", amount=1.0)
+    # result = await iq.buy_blitz(active_id=2323, direction="call", amount=1.0)
     # print("[buy_blitz]", result)
 
+    # ----- get_actives (Explorer) -----
+    actives = await iq.get_actives("turbo")
+    open_actives = [k for k, v in actives.items() if v['open']]
+    print(f"[get_actives] Blitz actives open: {len(open_actives)}")
+
     # Close the websocket when done
-    await iq.ws.ws.close()
+    await iq.close()
 
 # ---------------------------------------------------------------------------
 # 3. Utilities – request / subscription IDs
@@ -73,11 +78,11 @@ async def demo_dispatcher(email: str, password: str):
     iq.dispatcher.add_listener("candle-generated", on_candle)
 
     # Start a candle stream (will trigger the listener)
-    await iq.start_candles_stream(active_id=76, duration=60, callback=lambda d: None)
+    await iq.start_candles_stream(active_id=2323, duration=60, callback=lambda d: None)
 
     # Keep the loop alive briefly to receive a few messages
     await asyncio.sleep(5)
-    await iq.ws.ws.close()
+    await iq.close()
 
 # ---------------------------------------------------------------------------
 # 5. Models – Pydantic data structures
@@ -104,10 +109,22 @@ def demo_models():
 # Run demos (replace with your credentials)
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    EMAIL = "seu_email@exemplo.com"
-    PASSWORD = "sua_senha"
-    asyncio.run(demo_auth(EMAIL, PASSWORD))
-    asyncio.run(demo_iqoption(EMAIL, PASSWORD))
-    demo_utils()
-    asyncio.run(demo_dispatcher(EMAIL, PASSWORD))
-    demo_models()
+    # Use environment variables or local config for credentials
+    # Create a tests/config.py file or set env vars for security
+    try:
+        from tests.config import EMAIL, PASSWORD
+    except ImportError:
+        import os
+        EMAIL = os.getenv("IQ_EMAIL", "email@example.com")
+        PASSWORD = os.getenv("IQ_PASSWORD", "password")
+
+    print(f"Using email: {EMAIL} (masked password)")
+    
+    if EMAIL == "email@example.com":
+         print("Please configure your credentials in tests/config.py or environment variables.")
+    else:
+        asyncio.run(demo_auth(EMAIL, PASSWORD))
+        asyncio.run(demo_iqoption(EMAIL, PASSWORD))
+        demo_utils()
+        asyncio.run(demo_dispatcher(EMAIL, PASSWORD))
+        demo_models()

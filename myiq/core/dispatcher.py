@@ -43,4 +43,4 @@ class Dispatcher:
                     else:
                         cb(message)
                 except Exception as e:
-                    logger.error("listener_error", event=name, error=str(e))
+                    logger.error("listener_error", event_name=name, error=str(e))

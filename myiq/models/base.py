@@ -27,3 +27,10 @@ class Candle(BaseModel):
     min: float
     max: float
     volume: float
+    # Real-time fields
+    active_id: Union[int, None] = None
+    size: Union[int, None] = None
+    at: Union[int, None] = None
+    ask: Union[float, None] = None
+    bid: Union[float, None] = None
+    phase: Union[str, None] = None

@@ -112,13 +112,24 @@ print(f"Primeira: {candles[0]}")
 print(f"Última: {candles[-1]}")
 ```
 
+
 ### 5. Candles em Tempo Real (Streaming)
 
 Receba velas assim que elas fecham ou atualizam, ideal para bots que operam tick-a-tick.
 
+O objeto `Candle` agora suporta campos exclusivos de tempo real como `active_id`, `phase`, `ask`, `bid` e `at`.
+
 ```python
-def on_new_candle(candle_data):
-    print(f"Nova atualização de vela: {candle_data}")
+from myiq import Candle
+
+def on_new_candle(data):
+    # Converte o dicionário cru para o modelo Candle
+    candle = Candle(**data)
+    
+    print(f"Atualização no Candle {candle.id}:")
+    print(f"- Preço: {candle.close} (Ask: {candle.ask} / Bid: {candle.bid})")
+    print(f"- Fase: {candle.phase}") # 'T' = Trading/Tempo Real
+    print(f"- Volume: {candle.volume}")
 
 # Assina o ativo 76 para velas de 1 minuto
 # O callback é chamado a cada atualização
@@ -127,6 +138,7 @@ await iq.start_candles_stream(active_id=76, duration=60, callback=on_new_candle)
 # Mantenha o loop rodando para continuar recebendo
 await asyncio.sleep(60)
 ```
+
 
 ### 6. Execução de Ordens (Trading)
 

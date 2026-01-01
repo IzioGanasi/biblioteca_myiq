@@ -180,24 +180,32 @@ class IQOption:
 
     # --- CANDLES STREAM ---
     async def start_candles_stream(self, active_id: int, duration: int, callback: Callable[[dict], None]):
-        # 1. Manda configuração de GRID para forçar o servidor a enviar candles
+        # "Shotgun" approach: Configura o Grid para todos os tipos possíveis.
+        # Isso garante que o stream inicie independente se é Turbo, Binary, Digital ou Blitz sem o usuário precisar adivinhar.
+        types_to_try = [INSTRUMENT_TYPE_BLITZ, "turbo-option", "binary-option", "digital-option"]
+        
+        plotters = []
+        for t in types_to_try:
+            plotters.append({
+                "activeId": active_id,
+                "activeType": t,
+                "plotType": "candles",
+                "candleDuration": duration,
+                "isMinimized": False
+            })
+
         grid_payload = {
             "name": "traderoom_gl_grid",
             "version": 2,
             "client_id": get_client_id(),
             "config": {
                 "name": "default",
-                "fixedNumberOfPlotters": 1,
-                "plotters": [{
-                    "activeId": active_id,
-                    "activeType": INSTRUMENT_TYPE_BLITZ,
-                    "plotType": "candles",
-                    "candleDuration": duration,
-                    "isMinimized": False
-                }],
+                "fixedNumberOfPlotters": len(plotters),
+                "plotters": plotters,
                 "selectedActiveId": active_id
             }
         }
+        
         await self.ws.send({
             "name": "sendMessage",
             "request_id": get_req_id(),
@@ -205,12 +213,12 @@ class IQOption:
         })
         
         # 2. Inscreve no canal também por segurança
+        # Formato estrito conforme solicitado pelo usuário (sem versão)
         await self.ws.send({
             "name": "subscribeMessage",
             "request_id": get_sub_id(),
             "msg": {
                 "name": EV_CANDLE_GENERATED,
-                "version": "2.0",
                 "params": {"routingFilters": {"active_id": int(active_id), "size": int(duration)}}
             }
         })

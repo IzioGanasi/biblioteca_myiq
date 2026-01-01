@@ -99,6 +99,85 @@ print(f"EURUSD Aberto? {iq.is_active_open(76)}")
 print(f"Payout atual: {iq.get_profit_percent(76)}%")
 ```
 
+### 3.1. Cache Automático de Ativos (Novo)
+
+A biblioteca agora mantém um cache atualizado de todos os ativos (Forex, Crypto, Opções) em tempo real. Isso é útil para validar se um ativo está suspenso ou fechado sem fazer requisições repetitivas.
+
+```python
+# A lista é atualizada automaticamente em background após o start()
+await asyncio.sleep(2) # Aguarde um momento para popular
+
+# Acessar dados crus de um ativo (Ex: 76)
+info = iq.actives_cache.get("76")
+if info:
+    print(f"Ativo: {info.get('active_type')} | Suspenso: {info.get('is_suspended')}")
+    print(f"Precisão: {info.get('precision')} | Imagem: {info.get('image')}")
+```
+
+    print(f"Ativo: {info.get('active_type')} | Suspenso: {info.get('is_suspended')}")
+    print(f"Precisão: {info.get('precision')} | Imagem: {info.get('image')}")
+```
+
+### 3.2. Cache Inteligente de Ativos (Blitz, Turbo, Binary)
+
+A biblioteca agora implementa um sistema de cache segregado para resolver conflitos de IDs (ex: EURUSD ID 76 pode estar Aberto em Blitz mas Fechado em Binárias).
+
+O método `iq.check_active(id)` e `iq.get_active(id)` utilizam uma **lógica de prioridade** inteligente:
+1.  Busca em **Blitz** (Prioridade Máxima)
+2.  Busca em **Turbo**
+3.  Busca em **Binary**
+4.  Busca em **Digital/Outros**
+
+Isso garante que seu bot sempre "veja" a versão aberta do ativo, ideal para estratégias de alta frequência.
+
+```python
+# Acesso Transparente (Recomendado)
+info = iq.check_active(76)
+print(f"Status: {info.get('enabled')} | Tipo: {info.get('active_type')}")
+
+# Acesso Bruto (Avançado)
+info_blitz = iq.actives_cache['blitz'].get('76')
+info_binary = iq.actives_cache['binary'].get('76')
+```
+
+### 3.3. Dados do Usuário e Configurações
+(O restante segue igual...)
+
+Ao conectar, a biblioteca automaticamente popula informações do perfil, configurações da conta e flags de funcionalidades (features).
+
+```python
+# Perfil completo (Dados pessoais, endereço, moeda, etc)
+print(f"Nome do Usuário: {iq.profile.get('name')}")
+print(f"Moeda: {iq.profile.get('currency')}")
+
+# Configurações da plataforma (Tema, últimos valores operados, etc)
+# Exemplo: Acessar últimas configurações de trading (valores de entrada)
+trading_conf = iq.user_settings.get("traderoom_gl_trading", {})
+print(f"Último valor Turbo: {trading_conf.get('lastAmounts', {}).get('turbo')}")
+
+# Features (Funcionalidades ativadas/desativadas para a conta)
+is_blitz_enabled = iq.features.get("blitz-option") == "enabled"
+print(f"Blitz Habilitado? {is_blitz_enabled}")
+```
+
+### 3.3. Perfil Financeiro do Ativo (GraphQL)
+
+Para obter dados profundos sobre um ativo, como descrição da empresa, site oficial, market cap (para criptos) ou variação anual.
+
+```python
+# Requer ID do ativo (Ex: 2276 - Ondo/USDT)
+fin_info = await iq.get_financial_info(2276)
+
+if fin_info:
+    print(f"Nome Oficial: {fin_info.get('name')}")
+    print(f"Descrição: {fin_info.get('fininfo', {}).get('description')}")
+    
+    # Dados de Cripto (se aplicável)
+    base_info = fin_info.get('fininfo', {}).get('base', {})
+    if base_info:
+        print(f"Site Oficial: {base_info.get('site')}")
+```
+
 ### 4. Coleta de Candles (Histórico)
 
 Baixe milhares de velas automaticamente. A função lida com a paginação interna da IQ Option.

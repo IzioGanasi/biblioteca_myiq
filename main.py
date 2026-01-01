@@ -106,6 +106,103 @@ def demo_models():
     print("[model] Candle instance:", candle)
 
 # ---------------------------------------------------------------------------
+# 6. Asset Cache (New)
+# ---------------------------------------------------------------------------
+async def demo_cache(email: str, password: str):
+    iq = IQOption(email, password)
+    await iq.start()
+    
+    print("[cache] Waiting for cache to populate...")
+    await asyncio.sleep(3) # Give it some time to receive the list
+    
+    # Example access: Check if asset 76 (EURUSD) is available in BLITZ (Priority) or TURBO
+    asset_id = "76"
+    
+    # 1. Smart Access (Recommended)
+    print(f"\n[cache] Consulta Inteligente para ID {asset_id} (Prioridade):")
+    smart_info = iq.check_active(asset_id)
+    if smart_info:
+        print(f"  -> Encontrado em: {smart_info.get('active_type')}")
+        print(f"  -> Aberto: {iq.is_active_open(asset_id)}")
+    else:
+        print("  -> Não encontrado no Smart Cache.")
+
+    # 2. Raw Access (Debug)
+    blitz_cache = iq.actives_cache.get("blitz", {})
+    info_blitz = blitz_cache.get(asset_id)
+    
+    if info_blitz:
+        print(f"\n[cache] Asset {asset_id} found specifically in BLITZ!")
+        print(f"  -> Enabled: {info_blitz.get('enabled')}")
+        print(f"  -> Suspended: {info_blitz.get('is_suspended')}")
+    else:
+        print(f"\n[cache] Asset {asset_id} NOT found in BLITZ specific cache.")
+        
+    total = sum(len(v) for v in iq.actives_cache.values())
+    print(f"[cache] Total actives cached (across all types): {total}")
+    await iq.close()
+
+# ---------------------------------------------------------------------------
+# 7. User Data (New) - Profile, Settings, Features
+# ---------------------------------------------------------------------------
+async def demo_user_data(email: str, password: str):
+    iq = IQOption(email, password)
+    await iq.start()
+    
+    print("[user] Waiting for profile/settings to sync...")
+    await asyncio.sleep(5) 
+    
+    # 1. Profile
+    if iq.profile:
+        print(f"[user] Name: {iq.profile.get('name')}")
+        print(f"[user] Country ID: {iq.profile.get('country_id')}")
+        print(f"[user] City: {iq.profile.get('city')}")
+    else:
+        print("[user] Profile data not yet received.")
+
+    # 2. Features
+    blitz_feat = iq.features.get("blitz-option", "unknown")
+    print(f"[user] Feature 'blitz-option': {blitz_feat}")
+
+    # 3. Settings (Last amounts, interface settings)
+    trading_conf = iq.user_settings.get("traderoom_gl_trading", {})
+    if trading_conf:
+        print(f"[user] Last Turbo Bet: {trading_conf.get('lastAmounts', {}).get('turbo')}")
+        print(f"[user] Buy One Click Blitz: {trading_conf.get('isBuyOneClickBlitz')}")
+
+    await iq.close()
+
+# ---------------------------------------------------------------------------
+# 8. Financial Info (New) - GraphQL
+# ---------------------------------------------------------------------------
+async def demo_financial_info(email: str, password: str):
+    iq = IQOption(email, password)
+    await iq.start()
+    
+    # Example: Ondo (OTC) as per logs, ID 2276
+    active_id = 2276 
+    print(f"[fin-info] Requesting for Active {active_id} (Ondo)...")
+    
+    data = await iq.get_financial_info(active_id)
+    
+    if data:
+        print(f"[fin-info] Name: {data.get('name')}")
+        print(f"[fin-info] Ticker: {data.get('ticker')}")
+        
+        # Access nested description
+        desc = data.get('fininfo', {}).get('description')
+        if desc:
+            print(f"[fin-info] Description: {desc[:100]}...") # Truncated
+            
+        charts = data.get('charts', {})
+        if charts:
+            print(f"[fin-info] 1Y Change: {charts.get('y1', {}).get('change')}%")
+    else:
+        print("[fin-info] No data returned (timeout or error).")
+
+    await iq.close()
+
+# ---------------------------------------------------------------------------
 # Run demos (replace with your credentials)
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
@@ -128,3 +225,6 @@ if __name__ == "__main__":
         demo_utils()
         asyncio.run(demo_dispatcher(EMAIL, PASSWORD))
         demo_models()
+        asyncio.run(demo_cache(EMAIL, PASSWORD))
+        asyncio.run(demo_user_data(EMAIL, PASSWORD))
+        asyncio.run(demo_financial_info(EMAIL, PASSWORD))

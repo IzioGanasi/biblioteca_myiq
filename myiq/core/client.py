@@ -20,7 +20,167 @@ class IQOption:
         self.ssid = None
         self.active_balance_id = None
         self.server_time_offset = 0
-        self.actives_cache = {}
+        from collections import defaultdict
+        self.actives_cache = defaultdict(dict) # { type_name: { active_id: data } }
+        # New attributes for storing message data
+        self.profile = {}
+        self.features = {}
+        self.user_settings = {}
+        self.instruments_categories = {} # from initialization-data
+
+    async def subscribe_actives(self):
+        """
+        Inscreve para receber atualizações da lista de ativos (underlying-list-changed).
+        Isso popula self.actives_cache.
+        """
+        # Digital
+        await self.ws.send({
+            "name": "subscribeMessage",
+            "request_id": get_req_id(),
+            "msg": {
+                "name": "digital-option-instruments.underlying-list-changed",
+                "version": "3.0",
+                "params": {"routingFilters": {"user_group_id": 1, "is_regulated": False}}
+            }
+        })
+        # Turbo (Blitz/Short)
+        await self.ws.send({
+            "name": "subscribeMessage",
+            "request_id": get_req_id(),
+            "msg": {
+                "name": "turbo-option-instruments.underlying-list-changed",
+                "version": "3.0",
+                "params": {"routingFilters": {"user_group_id": 1, "is_regulated": False}}
+            }
+        })
+        # Binary (Long)
+        await self.ws.send({
+            "name": "subscribeMessage",
+            "request_id": get_req_id(),
+            "msg": {
+                "name": "binary-option-instruments.underlying-list-changed",
+                "version": "3.0",
+                "params": {"routingFilters": {"user_group_id": 1, "is_regulated": False}}
+            }
+        })
+        # Blitz (New Support)
+        await self.ws.send({
+            "name": "subscribeMessage",
+            "request_id": get_req_id(),
+            "msg": {
+                "name": "blitz-option-instruments.underlying-list-changed",
+                "version": "3.0", # Assuming schema follows others
+                "params": {"routingFilters": {"user_group_id": 1, "is_regulated": False}}
+            }
+        })
+        logger.info("actives_list_subscribed")
+
+    def _on_underlying_list_changed(self, message: dict):
+        try:
+            # Determine type from message name if possible
+            msg_name = message.get("msg", {}).get("name", "")
+            active_type = "unknown"
+            
+            if "digital-option" in msg_name:
+                active_type = "digital-option"
+            elif "turbo-option" in msg_name:
+                active_type = "turbo-option" # Covers Blitz
+            elif "binary-option" in msg_name:
+                active_type = "binary-option"
+            elif "blitz-option" in msg_name:
+                active_type = "blitz-option" # Explicit blitz support
+            
+            # If msg_name is generic 'underlying-list-changed', try to infer or default
+            # But usually it has the prefix. If not, we might be overwriting unknown types.
+                
+            msg = message.get("msg", {})
+            underlying_list = msg.get("underlying", [])
+            
+            count = 0
+            for item in underlying_list:
+                active_id = str(item.get("active_id"))
+                if active_id:
+                    # Save into nested dict: cache[type][id]
+                    self.actives_cache[active_type][active_id] = item
+                    item["active_type"] = active_type # Inject type into data too
+                    count += 1
+            
+            logger.info("actives_cache_updated", type=active_type, count=count)
+        except Exception as e:
+            logger.error("update_actives_error", error=str(e))
+
+    def _on_profile(self, message: dict):
+        """Handler for 'profile' message."""
+        try:
+            msg = message.get("msg", {})
+            if msg:
+                self.profile = msg
+                logger.info("profile_updated", user_id=self.profile.get("user_id"))
+        except Exception as e:
+            logger.error("profile_parse_error", error=str(e))
+
+    def _on_features(self, message: dict):
+        """Handler for 'features' message."""
+        try:
+            msg = message.get("msg", {})
+            features_list = msg.get("features", [])
+            # Store simply as a dict {id: status} or similar, or just raw
+            for feat in features_list:
+                name = feat.get("name")
+                status = feat.get("status")
+                if name:
+                    self.features[name] = status
+            logger.info("features_updated", count=len(self.features))
+        except Exception as e:
+            logger.error("features_parse_error", error=str(e))
+
+    def _on_user_settings(self, message: dict):
+        """Handler for 'user-settings'."""
+        try:
+            # The message structure from log: {"name":"user-settings","msg":{"configs":[...]}}
+            # But sometimes it might be just the msg depending on dispatcher.
+            # Our dispatcher sends the WHOLE message to callbacks.
+            msg = message.get("msg", {})
+            configs = msg.get("configs", [])
+            for conf in configs:
+                name = conf.get("name")
+                if name:
+                    self.user_settings[name] = conf.get("config")
+            logger.info("user_settings_updated")
+        except Exception as e:
+            logger.error("settings_parse_error", error=str(e))
+
+
+    def _on_initialization_data(self, message: dict):
+        """Handler for 'initialization-data'."""
+        try:
+            # message['msg'] keys are categories: 'turbo', 'binary', 'blitz', 'digital', 'forex', etc.
+            msg = message.get("msg", {})
+            
+            count_new = 0
+            
+            # Dynamic parsing: Iterate over all keys regardless of name
+            for category_name, category_data in msg.items():
+                if isinstance(category_data, dict):
+                    actives_dict = category_data.get("actives")
+                    
+                    if isinstance(actives_dict, dict):
+                        # category_name is exactly 'blitz', 'turbo', etc.
+                        # Save directly to cache[category_name]
+                        for a_id, a_data in actives_dict.items():
+                            s_id = str(a_id)
+                            # Enforce active_type if missing
+                            if "active_type" not in a_data:
+                                a_data["active_type"] = category_name
+                                
+                            self.actives_cache[category_name][s_id] = a_data
+                            count_new += 1
+            
+            logger.info("init_data_processed", merged_active_items=count_new)
+        except Exception as e:
+            logger.error("init_data_error", error=str(e))
+        except Exception as e:
+            logger.error("init_data_error", error=str(e))
 
     async def start(self):
         self.ssid = await self.auth.get_ssid()
@@ -30,12 +190,36 @@ class IQOption:
         self.ws.on_message_hook = self._on_ws_message
         
         logger.info("connecting_ws")
+        
+        
+        # Registra listener para lista de ativos
+        self.dispatcher.add_listener(EV_UNDERLYING_LIST_CHANGED, self._on_underlying_list_changed)
+        
+        # Registra listeners para os novos tipos de mensagem
+        self.dispatcher.add_listener(EV_PROFILE, self._on_profile)
+        self.dispatcher.add_listener(EV_FEATURES, self._on_features)
+        self.dispatcher.add_listener(EV_USER_SETTINGS, self._on_user_settings)
+        # some logs show "set-user-settings" as trigger? No, usually "user-settings" is the event name.
+        self.dispatcher.add_listener(EV_INIT_DATA, self._on_initialization_data)
+        
         await self.ws.connect()
         
         logger.info("authenticating_ws")
         await self._authenticate()
+        
+        # Request initialization data explicitly (crucial for getting active lists like blitz)
+        await self.ws.send({
+            "name": "sendMessage",
+            "request_id": get_req_id(),
+            "msg": {
+                "name": "get-initialization-data",
+                "version": "4.0",
+                "body": {}
+            }
+        })
             
         await self.subscribe_portfolio()
+        await self.subscribe_actives()
         
         # Iniciar Heartbeat
         asyncio.create_task(self._heartbeat_loop())
@@ -59,6 +243,7 @@ class IQOption:
             await self._authenticate()
             # Re-Inscrever
             await self.subscribe_portfolio()
+            await self.subscribe_actives()
             logger.info("reconnection_tasks_completed")
         except Exception as e:
             logger.error("reconnection_failed", error=str(e))
@@ -133,6 +318,132 @@ class IQOption:
             return True
         finally:
             self.dispatcher.remove_listener(EV_AUTHENTICATED, on_auth_msg)
+
+    async def get_financial_info(self, active_id: int):
+        """
+        Request detailed financial information (GraphQL) for an active.
+        This provides technical indicators changes (m1, ytd), full name, description, etc.
+        """
+        req_id = get_req_id()
+        future = self.dispatcher.create_future(req_id)
+        
+        # The complex GraphQL query from the logs
+        query = """query GetAssetProfileInfo($activeId:ActiveID!, $locale: LocaleName, $instrumentType: InstrumentTypeName!, $userGroupId: UserGroupID){
+      active(id: $activeId) {
+        id
+        name(source: TradeRoom, locale: $locale)
+        ticker
+        price
+        media {
+          siteBackground
+        }
+        
+        expirations(instrument: $instrumentType, userGroupID: $userGroupId) {
+            endOfDay
+            endOfHour
+            endOfMonth
+            endOfWeek
+            min(instrument: $instrumentType)
+            values(instrument: $instrumentType) {
+                value
+            }
+        }
+        charts {
+          dtd {
+            change
+          }
+          m1 {
+            change
+          }
+          y1 {
+            change
+          }
+          ytd {
+            change
+          }
+        }
+        index_fininfo: fininfo {
+          ... on Index {
+            description(locale: $locale)
+          }
+        }
+        fininfo {
+          ... on Pair {
+            type
+            description(locale: $locale)
+            currency {
+              name(locale: $locale)
+            }
+            base {
+              name(locale: $locale)
+              ... on Stock {
+                company {
+                  country {
+                    nameShort
+                  }
+                  gics {
+                    sector(locale: $locale)
+                    industry(locale: $locale)
+                  }
+                  site
+                  domain
+                }
+                keyStat {
+                  marketCap
+                  peRatioHigh
+                }
+              }
+              ... on CryptoCurrency {
+                site
+                domain
+                coinsInCirculation
+                maxCoinsQuantity
+                volume24h
+                marketCap
+              }
+            }
+          }
+        }
+      }
+    }"""
+        
+        # We need to guess or default some params.
+        # instrumentType: "BlitzOption" works for blitz, but maybe dynamic? 
+        # For general safety we can use "DigitalOption" or stick to what log showed if it's generic.
+        # The log used "BlitzOption" for active 2276. Let's try to infer or default.
+        inst_type = "BlitzOption"
+        
+        payload = {
+            "name": "sendMessage", # Wrapped message
+            "request_id": req_id,
+            "msg": {
+                "name": OP_GET_FINANCIAL_INFO,
+                "version": "1.0",
+                "body": {
+                    "query": query,
+                    "variables": {
+                        "activeId": int(active_id),
+                        "locale": "pt_PT", # Hardcoded to user preference or config
+                        "instrumentType": inst_type,
+                        "userGroupId": 1 # Default group
+                    },
+                    "operationName": "GetAssetProfileInfo"
+                }
+            }
+        }
+        
+        await self.ws.send(payload)
+        
+        try:
+            res = await asyncio.wait_for(future, timeout=10.0)
+            # The structure is res['msg']['data']['active']
+            return res.get("msg", {}).get("data", {}).get("active", {})
+        except asyncio.TimeoutError:
+            logger.error("financial_info_timeout", active_id=active_id)
+            return None
+        except Exception as e:
+            logger.error("financial_info_error", error=str(e))
+            return None
 
     async def _send_with_retry(self, name: str, body: dict, version: str = "1.0", timeout: float = 20.0, retries: int = 3) -> dict:
         """Helper to send WsRequests with retry logic."""
@@ -269,12 +580,36 @@ class IQOption:
         self.actives_cache.update(actives)
         return actives
 
+    def get_active(self, active_id: int) -> dict:
+        """
+        Retrieves active info looking into all cache categories with priority.
+        Priority: blitz > turbo > binary > digital
+        """
+        s_id = str(active_id)
+        # Prioridade baseada na modernidade (Blitz é mais recente/rápido)
+        priorities = ["blitz", "turbo", "binary", "digital", "digital-option"]
+        
+        # 1. Busca Direcionada
+        for cat in priorities:
+            data = self.actives_cache.get(cat, {}).get(s_id)
+            if data:
+                return data
+        
+        # 2. Varredura Genérica (caso haja categorias novas não mapeadas)
+        for cat, cache in self.actives_cache.items():
+            if isinstance(cache, dict):
+                data = cache.get(s_id)
+                if data:
+                    return data
+                    
+        return {}
+
     def check_active(self, active_id: int) -> dict:
         """
-        Returns the cached status of an active. 
+        Returns the cached status of an active using smart lookup. 
         Returns an empty dict if not found.
         """
-        return self.actives_cache.get(int(active_id), {})
+        return self.get_active(active_id)
 
     def get_profit_percent(self, active_id: int) -> int:
         """Returns the profit percentage for the active (e.g. 86)."""
@@ -282,7 +617,8 @@ class IQOption:
 
     def is_active_open(self, active_id: int) -> bool:
         """Checks if the active is currently open for trading."""
-        return self.check_active(active_id).get("is_open", False)
+        info = self.check_active(active_id)
+        return info.get("enabled", False) and not info.get("is_suspended", True)
 
     async def close(self):
         """Close the WebSocket connection."""

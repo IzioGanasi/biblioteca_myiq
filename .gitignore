@@ -32,5 +32,3 @@ venv.bak/
 
 # MyIQ Local
 local_config.py
-tests/test_stream_fields.py
-jma_strategy.py

@@ -612,8 +612,26 @@ class IQOption:
         return self.get_active(active_id)
 
     def get_profit_percent(self, active_id: int) -> int:
-        """Returns the profit percentage for the active (e.g. 86)."""
-        return self.check_active(active_id).get("profit_percent", 0)
+        """
+        Returns the profit percentage for the active (e.g. 86).
+        Calculates from commission if explicit field is missing.
+        """
+        data = self.check_active(active_id)
+        
+        # 1. Try direct field
+        if "profit_percent" in data:
+            return data["profit_percent"]
+            
+        # 2. Try calculation from commission (100 - commission)
+        # Structure: data['option']['profit']['commission']
+        try:
+            commission = data.get("option", {}).get("profit", {}).get("commission")
+            if commission is not None:
+                return 100 - int(commission)
+        except:
+            pass
+            
+        return 0
 
     def is_active_open(self, active_id: int) -> bool:
         """Checks if the active is currently open for trading."""

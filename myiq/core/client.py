@@ -105,7 +105,7 @@ class IQOption:
                     item["active_type"] = active_type # Inject type into data too
                     count += 1
             
-            logger.info("actives_cache_updated", type=active_type, count=count)
+            #logger.info("actives_cache_updated", type=active_type, count=count)
         except Exception as e:
             logger.error("update_actives_error", error=str(e))
 

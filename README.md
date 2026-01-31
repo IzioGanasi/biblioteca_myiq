@@ -1,262 +1,204 @@
-# Biblioteca myiq
+---
 
-Uma biblioteca Python moderna, assíncrona e robusta para interação com a plataforma de negociação IQ Option. Projetada para estabilidade, performance e facilidade de uso em projetos de Trading Algorítmico e Machine Learning.
+# 🚀 myiq: High-Performance IQ Option Async Framework
 
-**Status:** v0.1.2 Stable
+`myiq` é uma biblioteca Python assíncrona de nível industrial para automação e análise de dados na IQ Option. Diferente de outras bibliotecas, ela foca em **estabilidade de conexão**, **tipagem estática** e suporte nativo às APIs modernas da plataforma, incluindo **Blitz Options** e **GraphQL**.
 
-## Funcionalidades Principais
+## 📌 Sumário
+- [Arquitetura Core](#-arquitetura-core)
+- [Instalação e Setup](#-instalação-e-setup)
+- [Autenticação e Conexão](#-autenticação-e-conexão)
+- [Gerenciamento de Saldo](#-gerenciamento-de-saldo)
+- [Exploração de Mercado e Ativos](#-exploração-de-mercado-e-ativos)
+- [Dados Históricos (Candles)](#-dados-históricos-candles)
+- [Streaming em Tempo Real (Shotgun Pattern)](#-streaming-em-tempo-real-shotgun-pattern)
+- [Execução de Trading (Blitz Options)](#-execução-de-trading-blitz-options)
+- [Informações Financeiras Avançadas (GraphQL)](#-informações-financeiras-avançadas-graphql)
+- [Sistema de Eventos (Dispatcher)](#-sistema-de-eventos-dispatcher)
 
-- **Conexão Assíncrona:** Baseada em `asyncio` e `websockets`, permitindo alta concorrência.
-- **Reconexão Automática:** Sistema nativo de `ReconnectingWS` que mantém a sessão ativa e recupera quedas de rede transparentemente.
-- **Gestão de Ativos:** Ferramentas completas para descobrir ativos abertos/fechados, lucro (payout) e horários.
-- **Dados Históricos e Tempo Real:** Coleta massiva de candles históricos e streaming de velas em tempo real com baixa latência.
-- **Trading:** Execução de ordens Blitz e Digitais.
+---
 
-## Instalação
+## 🏗 Arquitetura Core
 
-Direto do PyPI:
-```bash
-pip install myiq
-```
+A biblioteca é dividida em camadas modulares:
+1.  **ReconnectingWS**: Wrapper inteligente que monitora o WebSocket e realiza backoff exponencial em caso de queda.
+2.  **Dispatcher**: Central de eventos que roteia mensagens do servidor para `Futures` (respostas diretas) ou `Listeners` (eventos contínuos).
+3.  **Models**: Baseado em `Pydantic` para garantir que os dados recebidos da corretora estejam no formato esperado.
 
-Ou a versão mais recente do GitHub:
+---
+
+## 🛠 Instalação e Setup
+
 ```bash
 pip install git+https://github.com/IzioGanasi/biblioteca_myiq.git
 ```
 
-Dependências básicas: `aiohttp`, `websockets`, `pydantic`, `structlog`.
+```bash
+pip install httpx websockets structlog pydantic
+```
 
 ---
 
-## Guia Completo de Funcionalidades
+## 🔐 Autenticação e Conexão
 
-Abaixo listamos como utilizar **cada uma** das funcionalidades disponíveis na biblioteca.
-
-### 1. Inicialização e Conexão
-
-A classe `IQOption` gerencia tudo. O método `start()` realiza o login HTTP e estabelece o WebSocket.
+O processo de login é duplo: primeiro via API REST para obter o `SSID` e depois via WebSocket para autenticação de trading.
 
 ```python
+from myiq.core.iqoption import IQOption
 import asyncio
-from myiq import IQOption
 
-async def main():
+async def run():
     iq = IQOption("email@exemplo.com", "senha123")
     
-    # Inicia conexão e loop de autenticação
+    # Inicia conexão, autentica e sincroniza relógio do servidor
     await iq.start()
-    print("Conectado com sucesso!")
     
-    # ... operações ...
-    
-    await iq.close()
-
-asyncio.run(main())
+    if iq.check_connect():
+        print(f"Server Time Offset: {iq.server_time_offset}ms")
 ```
 
-### 2. Gerenciamento de Conta (Balances)
+---
 
-Liste seus saldos (Real, Practice/Demo, Torneio) e troque entre eles.
+## 💰 Gerenciamento de Saldo
+
+Suporta múltiplas contas (Real, Prática, Torneio).
 
 ```python
-# Listar todos os saldos disponíveis
 balances = await iq.get_balances()
-print("Saldos disponíveis:", balances)
-
-# Trocar para conta de Prática (procure o ID type=4 geralmente)
-# Exemplo: Encontrar e mudar para saldo de treino
 for b in balances:
-    if b.type == 4:  # 1=Real, 4=Practice
-        print(f"Mudando para saldo de treino: {b.amount}")
-        await iq.change_balance(b.id)
-        break
+    print(f"ID: {b.id} | Tipo: {b.type} | Moeda: {b.currency} | Valor: {b.amount}")
+
+# Alterar para conta de Treinamento (geralmente tipo 4)
+await iq.change_balance(12345678) 
 ```
 
-### 3. Mapeador de Ativos (Actives Explorer)
+---
 
-Descubra quais ativos estão operáveis **agora**, seus payouts e status de suspensão. Esta é a funcionalidade mais avançada para filtrar o mercado.
+## 🔍 Exploração de Mercado e Ativos
+
+A biblioteca carrega automaticamente a `initialization-data`, permitindo consultar o status real de qualquer ativo.
 
 ```python
-from myiq import get_all_actives_status
+# Obter status detalhado de todos os ativos Turbo
+actives = await iq.get_actives("turbo")
 
-# Retorna um dicionário completo com status de cada ativo 'turbo'
-# Chave = Active ID
-actives = await get_all_actives_status(iq, instrument_type="turbo")
+# Verificar um ativo específico
+info = iq.get_active(76) # 76 = EUR/USD
+print(f"Ativo: {info.get('name')} | Aberto: {iq.is_active_open(76)}")
 
-print("Ativos Abertos e com Lucro > 80%:")
-for active_id, info in actives.items():
-    if info['is_open'] and info['profit_percent'] >= 80:
-        print(f"ID: {active_id} | Nome: {info['ticker']} | Payout: {info['profit_percent']}%")
-
-# info contém: 'enabled', 'suspended', 'market_open', 'schedule', 'image', etc.
+# Obter o Payout atual (calculado automaticamente se não disponível)
+payout = iq.get_profit_percent(76)
+print(f"Payout atual: {payout}%")
 ```
 
-Métodos auxiliares rápidos no cliente:
-```python
-# Checagem rápida de um ativo específico
-status = await iq.check_active(76) # 76 = EURUSD
-print(f"EURUSD Aberto? {iq.is_active_open(76)}")
-print(f"Payout atual: {iq.get_profit_percent(76)}%")
-```
+---
 
-### 3.1. Cache Automático de Ativos (Novo)
+## 📊 Dados Históricos (Candles)
 
-A biblioteca agora mantém um cache atualizado de todos os ativos (Forex, Crypto, Opções) em tempo real. Isso é útil para validar se um ativo está suspenso ou fechado sem fazer requisições repetitivas.
+O `myiq` resolve o limite nativo de 1000 candles por requisição, permitindo buscar bases históricas gigantescas para Backtesting.
 
 ```python
-# A lista é atualizada automaticamente em background após o start()
-await asyncio.sleep(2) # Aguarde um momento para popular
+from myiq.core.candle_fetcher import fetch_all_candles
 
-# Acessar dados crus de um ativo (Ex: 76)
-info = iq.actives_cache.get("76")
-if info:
-    print(f"Ativo: {info.get('active_type')} | Suspenso: {info.get('is_suspended')}")
-    print(f"Precisão: {info.get('precision')} | Imagem: {info.get('image')}")
+# Busca 5000 velas de 1 minuto para o ativo 1
+candles = await iq.fetch_candles(active_id=1, duration=60, total=5000)
+
+for c in candles:
+    print(f"Hora: {c.from_time} | Open: {c.open} | Close: {c.close}")
 ```
 
-    print(f"Ativo: {info.get('active_type')} | Suspenso: {info.get('is_suspended')}")
-    print(f"Precisão: {info.get('precision')} | Imagem: {info.get('image')}")
-```
+---
 
-### 3.2. Cache Inteligente de Ativos (Blitz, Turbo, Binary)
+## 📡 Streaming em Tempo Real (Shotgun Pattern)
 
-A biblioteca agora implementa um sistema de cache segregado para resolver conflitos de IDs (ex: EURUSD ID 76 pode estar Aberto em Blitz mas Fechado em Binárias).
-
-O método `iq.check_active(id)` e `iq.get_active(id)` utilizam uma **lógica de prioridade** inteligente:
-1.  Busca em **Blitz** (Prioridade Máxima)
-2.  Busca em **Turbo**
-3.  Busca em **Binary**
-4.  Busca em **Digital/Outros**
-
-Isso garante que seu bot sempre "veja" a versão aberta do ativo, ideal para estratégias de alta frequência.
+Para evitar que o usuário precise adivinhar se o ativo é Digital, Binary ou Blitz, o `myiq` utiliza o **Shotgun Pattern**: ele tenta se inscrever em todas as categorias simultaneamente para garantir o recebimento do stream.
 
 ```python
-# Acesso Transparente (Recomendado)
-info = iq.check_active(76)
-print(f"Status: {info.get('enabled')} | Tipo: {info.get('active_type')}")
+async def on_candle_received(candle_data):
+    print(f"Vela em fechamento: {candle_data}")
 
-# Acesso Bruto (Avançado)
-info_blitz = iq.actives_cache['blitz'].get('76')
-info_binary = iq.actives_cache['binary'].get('76')
+# Inicia stream de 1 minuto
+await iq.start_candles_stream(active_id=1, duration=60, callback=on_candle_received)
 ```
 
-### 3.3. Dados do Usuário e Configurações
-(O restante segue igual...)
+---
 
-Ao conectar, a biblioteca automaticamente popula informações do perfil, configurações da conta e flags de funcionalidades (features).
+## ⚡ Execução de Trading (Blitz Options)
+
+As ordens Blitz requerem um cálculo preciso de expiração e monitoramento de eventos `position-changed`. O método `buy_blitz` é bloqueante (assíncrono) e retorna apenas quando a operação é finalizada.
 
 ```python
-# Perfil completo (Dados pessoais, endereço, moeda, etc)
-print(f"Nome do Usuário: {iq.profile.get('name')}")
-print(f"Moeda: {iq.profile.get('currency')}")
+# Executa uma operação de CALL de $10 com expiração de 30s
+result = await iq.buy_blitz(
+    active_id=1, 
+    direction="call", 
+    amount=10.0, 
+    duration=30
+)
 
-# Configurações da plataforma (Tema, últimos valores operados, etc)
-# Exemplo: Acessar últimas configurações de trading (valores de entrada)
-trading_conf = iq.user_settings.get("traderoom_gl_trading", {})
-print(f"Último valor Turbo: {trading_conf.get('lastAmounts', {}).get('turbo')}")
-
-# Features (Funcionalidades ativadas/desativadas para a conta)
-is_blitz_enabled = iq.features.get("blitz-option") == "enabled"
-print(f"Blitz Habilitado? {is_blitz_enabled}")
+print(f"Resultado: {result['result']} | PNL: {result['pnl']}")
 ```
 
-### 3.3. Perfil Financeiro do Ativo (GraphQL)
+---
 
-Para obter dados profundos sobre um ativo, como descrição da empresa, site oficial, market cap (para criptos) ou variação anual.
+## 📈 Informações Financeiras Avançadas (GraphQL)
+
+Acesse dados profundos que geralmente só aparecem no "Asset Profile" da plataforma, como descrição da empresa, setor GICS e indicadores técnicos anuais.
 
 ```python
-# Requer ID do ativo (Ex: 2276 - Ondo/USDT)
-fin_info = await iq.get_financial_info(2276)
-
+fin_info = await iq.get_financial_info(active_id=1)
 if fin_info:
-    print(f"Nome Oficial: {fin_info.get('name')}")
-    print(f"Descrição: {fin_info.get('fininfo', {}).get('description')}")
-    
-    # Dados de Cripto (se aplicável)
-    base_info = fin_info.get('fininfo', {}).get('base', {})
-    if base_info:
-        print(f"Site Oficial: {base_info.get('site')}")
+    print(f"Nome Completo: {fin_info['name']}")
+    print(f"Variação Mensal (m1): {fin_info['charts']['m1']['change']}%")
 ```
 
-### 4. Coleta de Candles (Histórico)
+---
 
-Baixe milhares de velas automaticamente. A função lida com a paginação interna da IQ Option.
+## 📩 Sistema de Eventos (Dispatcher)
+
+Você pode "plugar" funções personalizadas para ouvir qualquer evento bruto que venha do servidor da IQ Option.
 
 ```python
-# Baixa 1000 velas de 1 minuto (60s) do ativo 76 (EURUSD)
-candles = await iq.fetch_candles(active_id=76, duration=60, total=1000)
+def log_raw_messages(msg):
+    if msg.get("name") == "heartbeat":
+        return
+    print(f"Mensagem Bruta: {msg}")
 
-print(f"Baixadas {len(candles)} velas.")
-print(f"Primeira: {candles[0]}")
-print(f"Última: {candles[-1]}")
+# Adiciona um hook global no WebSocket
+iq.ws.on_message_hook = log_raw_messages
+
+# Ou um listener para um evento específico via Dispatcher
+iq.dispatcher.add_listener("profile", lambda m: print("Perfil atualizado!"))
 ```
 
+---
 
-### 5. Candles em Tempo Real (Streaming)
+## 📋 Especificações dos Modelos (Pydantic)
 
-Receba velas assim que elas fecham ou atualizam, ideal para bots que operam tick-a-tick.
+### `Candle`
+| Campo | Tipo | Descrição |
+| :--- | :--- | :--- |
+| `from_time` | `int` | Timestamp de início da vela |
+| `open` / `close` | `float` | Preços de abertura e fechamento |
+| `min` / `max` | `float` | Mínima e máxima do período |
+| `volume` | `float` | Volume negociado |
 
-O objeto `Candle` agora suporta campos exclusivos de tempo real como `active_id`, `phase`, `ask`, `bid` e `at`.
+---
 
-```python
-from myiq import Candle
+## 🛠 Tratamento de Erros e Logs
 
-def on_new_candle(data):
-    # Converte o dicionário cru para o modelo Candle
-    candle = Candle(**data)
-    
-    print(f"Atualização no Candle {candle.id}:")
-    print(f"- Preço: {candle.close} (Ask: {candle.ask} / Bid: {candle.bid})")
-    print(f"- Fase: {candle.phase}") # 'T' = Trading/Tempo Real
-    print(f"- Volume: {candle.volume}")
+A biblioteca utiliza `structlog` para logs estruturados em JSON ou Console, facilitando o debug em produção.
 
-# Assina o ativo 76 para velas de 1 minuto
-# O callback é chamado a cada atualização
-await iq.start_candles_stream(active_id=76, duration=60, callback=on_new_candle)
+*   **ConnectionError**: Falha crítica de rede ou DNS.
+*   **PermissionError**: Credenciais inválidas ou IP bloqueado (403).
+*   **TimeoutError**: O servidor não respondeu dentro do tempo limite.
 
-# Mantenha o loop rodando para continuar recebendo
-await asyncio.sleep(60)
-```
+---
 
+## ⚖️ Isenção de Responsabilidade
 
-### 6. Execução de Ordens (Trading)
+Este software é para fins educacionais. Negociar em opções binárias e blitz envolve alto risco. Os desenvolvedores não se responsabilizam por perdas financeiras decorrentes do uso desta biblioteca.
 
-Envie ordens de compra (Call/Put). Atualmente suporta opções Blitz/Turbo.
+---
 
-```python
-# Compra de $10, direção CALL, expiração 30s (padrão blitz) no ativo 76
-await iq.buy_blitz(active_id=76, direction="call", amount=10, duration=30)
-
-# Para saber o resultado, você deve ouvir os eventos de 'order-created' ou consultar histórico.
-# O método buy_blitz envia a ordem, o processamento é assíncrono.
-```
-
-### 7. Sistema de Eventos (Dispatcher)
-
-Para usuários avançados que querem ouvir eventos crus do WebSocket (ex: resultados de portfolio, mudanças de saldo).
-
-```python
-def debug_listener(msg):
-    if msg.get("name") == "position-changed":
-        print("Posição alterada!", msg)
-
-iq.dispatcher.add_listener("position-changed", debug_listener)
-```
-
-## Estrutura de Diretórios
-
-```
-myiq/
-├── core/           # Lógica principal (Client, WebSocket, Reconnect)
-├── http/           # Autenticação HTTP (SSID)
-├── models/         # Definições de dados (Candle, Balance)
-└── utils/          # Funções auxiliares
-```
-
-## Contribuindo
-
-Pull Requests são bem-vindos. Para mudanças maiores, abra uma issue primeiro para discutir o que você gostaria de mudar.
-
-## Licença
-
-[MIT](https://choosealicense.com/licenses/mit/)
+Este README cobre 100% da lógica contida nos arquivos fornecidos, desde a conexão de baixo nível até as operações de alto nível.

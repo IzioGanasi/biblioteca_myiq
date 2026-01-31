@@ -1,5 +1,3 @@
----
-
 # 🚀 myiq: High-Performance IQ Option Async Framework
 
 `myiq` é uma biblioteca Python assíncrona de nível industrial para automação e análise de dados na IQ Option. Diferente de outras bibliotecas, ela foca em **estabilidade de conexão**, **tipagem estática** e suporte nativo às APIs modernas da plataforma, incluindo **Blitz Options** e **GraphQL**.
@@ -16,7 +14,6 @@
 - [Informações Financeiras Avançadas (GraphQL)](#-informações-financeiras-avançadas-graphql)
 - [Sistema de Eventos (Dispatcher)](#-sistema-de-eventos-dispatcher)
 
----
 
 ## 🏗 Arquitetura Core
 
